@@ -1,4 +1,4 @@
-// Enterprise Secure Banking System (v7.0) - UX & Centralized Security
+// Enterprise Secure Banking System (v8.1) - Localized for INR (₹)
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h> 
@@ -28,12 +28,13 @@ void displayRecords(FILE *readPtr);
 void viewRequests(void);            
 void applyInterest(FILE *fPtr);
 void textFile(FILE *readPtr);
+void bankAnalytics(FILE *fPtr);     
 void clearInputBuffer(void);
 
 // Security & UX Prototypes
 int authenticateUser(void); 
-int verify2FA(struct clientData *client); // NEW: Centralized 3-Attempt Security
-void printHelp(void);                     // NEW: User Instructions Menu
+int verify2FA(struct clientData *client); 
+void printHelp(void);                     
 
 // Sub-menu routing prototypes
 unsigned int mainMenuChoice(void);
@@ -60,7 +61,6 @@ int main(int argc, char *argv[])
         printf("System initialized with 100 blank records.\n");
     }
 
-    // MAIN MENU LOOP
     while ((choice = mainMenuChoice()) != 5)
     {
         switch (choice)
@@ -68,7 +68,7 @@ int main(int argc, char *argv[])
         case 1: transactionMenu(cfPtr); break;
         case 2: servicesMenu(cfPtr); break;
         case 3: adminMenu(cfPtr); break;
-        case 4: printHelp(); break; // NEW: Help Menu routed here
+        case 4: printHelp(); break; 
         default: puts("Incorrect choice. Please try again."); break;
         } 
     }     
@@ -84,30 +84,19 @@ void printHelp(void) {
     printf("\n==========================================================\n");
     printf("           HOW TO USE THIS BANKING SYSTEM                 \n");
     printf("==========================================================\n");
-    printf(" WELCOME! If you are new, here is how things work:\n\n");
-    printf(" 1. GETTING AN ACCOUNT: Only Bank Administrators can\n");
-    printf("    create accounts. Go to the Admin Panel (Option 3)\n");
-    printf("    and log in to open one.\n\n");
-    printf(" 2. TWO-FACTOR AUTHENTICATION (2FA): To protect your\n");
-    printf("    money, every transaction requires two things:\n");
-    printf("      - Your 4-digit PIN (e.g., 1234)\n");
-    printf("      - Your Biometric Hash (a secret word you pick\n");
-    printf("        during account creation, like 'THUMB99').\n\n");
-    printf(" 3. ACCOUNT TYPES:\n");
-    printf("      - Savings (S): Cannot be overdrawn. Earns 4%% interest.\n");
-    printf("      - Current (C): Does not earn interest. Has a $500\n");
-    printf("        overdraft limit for emergency spending.\n\n");
-    printf(" 4. SECURITY LOCKOUT: If you enter the wrong PIN or\n");
-    printf("    Hash 3 times, the system will temporarily block you.\n");
+    printf(" 1. 2FA SECURITY: Transactions require your PIN and Hash.\n");
+    printf(" 2. ACCOUNT TYPES: Savings ('S') earns 4%% interest. \n");
+    printf("    Current ('C') has a ₹10,000 overdraft limit.\n");
+    printf(" 3. FEES: Bill payments incur a ₹25.00 bank processing fee.\n");
+    printf(" 4. FOREX: International transfers automatically convert \n");
+    printf("    foreign currencies into INR at current exchange rates.\n");
     printf("==========================================================\n");
     printf("Press Enter to return to the Main Menu...");
-    clearInputBuffer(); 
-    getchar(); // Pauses until the user presses Enter
+    clearInputBuffer(); getchar(); 
 }
 
 // ======================= SECURITY MODULES =======================
 
-// Centralized 2FA checker - Reduces redundant code and adds 3-try lockout!
 int verify2FA(struct clientData *client) {
     unsigned int inputPin;
     char inputThumb[15];
@@ -120,8 +109,7 @@ int verify2FA(struct clientData *client) {
 
         if (inputPin != client->pin) {
             printf(">>> INCORRECT PIN. <<<\n");
-            attempts--;
-            continue;
+            attempts--; continue;
         }
 
         printf("[ ACTIVATING BIOMETRIC SENSOR ]\n");
@@ -130,15 +118,13 @@ int verify2FA(struct clientData *client) {
 
         if (strcmp(inputThumb, client->thumbprint) != 0) {
             printf(">>> BIOMETRIC MATCH FAILED. <<<\n");
-            attempts--;
-            continue;
+            attempts--; continue;
         }
-
         printf(">>> IDENTITY VERIFIED. ACCESS GRANTED. <<<\n\n");
-        return 1; // Success
+        return 1; 
     }
     printf("\n>>> SECURITY LOCKOUT: Too many failed attempts. Returning to menu. <<<\n");
-    return 0; // Fail
+    return 0; 
 }
 
 int authenticateUser(void) {
@@ -149,10 +135,8 @@ int authenticateUser(void) {
 
     printf("\n--- SECURE ADMIN LOGIN REQUIRED ---\n");
     while (attempts < 3) {
-        printf("Username: ");
-        scanf("%19s", inputUsername); clearInputBuffer(); 
-        printf("Password: ");
-        scanf("%19s", inputPassword); clearInputBuffer();
+        printf("Username: "); scanf("%19s", inputUsername); clearInputBuffer(); 
+        printf("Password: "); scanf("%19s", inputPassword); clearInputBuffer();
 
         if (strcmp(inputUsername, correctUsername) == 0 && strcmp(inputPassword, correctPassword) == 0) {
             printf("\n>>> ACCESS GRANTED. Welcome to the Admin Panel. <<<\n");
@@ -160,7 +144,7 @@ int authenticateUser(void) {
         }
         printf("Invalid credentials. Attempt %d/3\n", ++attempts);
     }
-    printf("\n>>> SECURITY LOCKOUT. Returning to Main Menu. <<<\n");
+    printf("\n>>> SECURITY LOCKOUT. <<<\n");
     return 0; 
 }
 
@@ -174,12 +158,12 @@ void clearInputBuffer(void) {
 unsigned int mainMenuChoice(void) {
     unsigned int choice; 
     printf("\n=================================================\n");
-    printf("     ENTERPRISE SECURE BANKING SYSTEM (v7.0)     \n");
+    printf("      VAULTFLOW ENTERPRISE BANKING (v8.1)        \n");
     printf("=================================================\n");
     printf("   1. Financial Transactions\n");
     printf("   2. Account Services & Inquiries\n");
     printf("   3. Administrator Panel\n");
-    printf("   4. Help & Instructions (New Users Start Here!)\n");
+    printf("   4. Help & Instructions\n");
     printf("   5. Exit System\n");
     printf("=================================================\n");
     printf("Select Category: ");
@@ -192,8 +176,8 @@ void transactionMenu(FILE *fPtr) {
     while(1) {
         printf("\n--- [ FINANCIAL TRANSACTIONS ] ---\n");
         printf(" 1. Deposit / Withdraw Funds\n");
-        printf(" 2. Transfer Funds to Another Account\n");
-        printf(" 3. Pay Utility Bills\n");
+        printf(" 2. Transfer Funds (Domestic & International)\n");
+        printf(" 3. Pay Utility Bills (₹25.00 Fee Applies)\n");
         printf(" 4. Return to Main Menu\n");
         printf("Choice: ");
         if (scanf("%u", &choice) != 1) { clearInputBuffer(); continue; }
@@ -241,26 +225,59 @@ void adminMenu(FILE *fPtr) {
         printf("\n--- [ ADMINISTRATOR PANEL ] ---\n");
         printf(" 1. Open New Account\n");
         printf(" 2. View All Active Accounts\n");
-        printf(" 3. Run Batch Process: Apply 4%% Interest\n");
-        printf(" 4. View Pending Customer Service Requests\n");
-        printf(" 5. Export Accounts Database (.txt)\n");
-        printf(" 6. Logout & Return to Main Menu\n");
+        printf(" 3. View Bank Analytics Dashboard (Macro Report)\n"); 
+        printf(" 4. Run Batch Process: Apply 4%% Interest\n");
+        printf(" 5. View Pending Customer Service Requests\n");
+        printf(" 6. Export Accounts Database (.txt)\n");
+        printf(" 7. Logout & Return to Main Menu\n");
         printf("Choice: ");
         if (scanf("%u", &choice) != 1) { clearInputBuffer(); continue; }
 
         switch(choice) {
             case 1: newRecord(fPtr); break;
             case 2: displayRecords(fPtr); break;
-            case 3: applyInterest(fPtr); break;
-            case 4: viewRequests(); break;
-            case 5: textFile(fPtr); break;
-            case 6: printf(">>> Admin Logged Out. <<<\n"); return; 
+            case 3: bankAnalytics(fPtr); break; 
+            case 4: applyInterest(fPtr); break;
+            case 5: viewRequests(); break;
+            case 6: textFile(fPtr); break;
+            case 7: printf(">>> Admin Logged Out. <<<\n"); return; 
             default: printf("Invalid option.\n");
         }
     }
 }
 
 // ======================= CORE FUNCTIONS =======================
+
+void bankAnalytics(FILE *fPtr) {
+    struct clientData client = {0, 0, "", ' ', "", "", 0.0};
+    int totalAccounts = 0;
+    int savingsCount = 0, currentCount = 0;
+    double totalLiquidity = 0.0;
+    double totalDebt = 0.0;
+
+    rewind(fPtr);
+    while (fread(&client, sizeof(struct clientData), 1, fPtr)) {
+        if (client.acctNum != 0) {
+            totalAccounts++;
+            if (client.accountType == 'S') savingsCount++;
+            else currentCount++;
+
+            if (client.balance >= 0) totalLiquidity += client.balance;
+            else totalDebt += (client.balance * -1); 
+        }
+    }
+
+    printf("\n=================================================\n");
+    printf("         GLOBAL BANK ANALYTICS DASHBOARD         \n");
+    printf("=================================================\n");
+    printf(" Total Active Accounts : %d\n", totalAccounts);
+    printf("   -> Savings Accounts : %d\n", savingsCount);
+    printf("   -> Current Accounts : %d\n", currentCount);
+    printf("-------------------------------------------------\n");
+    printf(" Total Bank Liquidity  : ₹%.2f (Assets)\n", totalLiquidity);
+    printf(" Total Outstanding Debt: ₹%.2f (Overdrafts)\n", totalDebt);
+    printf("=================================================\n");
+}
 
 void textFile(FILE *readPtr) {
     FILE *writePtr; 
@@ -281,13 +298,13 @@ void textFile(FILE *readPtr) {
 void displayRecords(FILE *readPtr) {
     struct clientData client = {0, 0, "", ' ', "", "", 0.0};
     rewind(readPtr); 
-    printf("\n%-6s%-6s%-16s%-11s%10s\n", "Acct", "Type", "Last Name", "First Name", "Balance");
-    printf("--------------------------------------------------\n");
+    printf("\n%-6s%-6s%-16s%-11s%12s\n", "Acct", "Type", "Last Name", "First Name", "Balance(₹)");
+    printf("----------------------------------------------------\n");
     while (fread(&client, sizeof(struct clientData), 1, readPtr)) {
         if (client.acctNum != 0)
-            printf("%-6u%-6c%-16s%-11s%10.2f\n", client.acctNum, client.accountType, client.lastName, client.firstName, client.balance);
+            printf("%-6u%-6c%-16s%-11s%12.2f\n", client.acctNum, client.accountType, client.lastName, client.firstName, client.balance);
     }
-    printf("--------------------------------------------------\n");
+    printf("----------------------------------------------------\n");
 }
 
 void searchAccount(FILE *fPtr) {
@@ -299,15 +316,13 @@ void searchAccount(FILE *fPtr) {
     fread(&client, sizeof(struct clientData), 1, fPtr);
     
     if (client.acctNum == 0) { printf(">>> Account #%u is empty. <<<\n", account); return; }
-
-    // Privacy upgrade: 2FA required to view balance now!
     if (!verify2FA(&client)) return; 
 
     printf("\n======= ACCOUNT DETAILS =======\n");
     printf("Account Number : %u\n", client.acctNum);
     printf("Account Holder : %s %s\n", client.firstName, client.lastName);
     printf("Account Type   : %s\n", (client.accountType == 'S') ? "Savings" : "Current");
-    printf("Current Balance: $%.2f\n", client.balance);
+    printf("Current Balance: ₹%.2f\n", client.balance);
     printf("===============================\n");
 }
 
@@ -323,7 +338,7 @@ void miniStatement(FILE *fPtr) {
     fread(&client, sizeof(struct clientData), 1, fPtr);
     
     if (client.acctNum == 0) { printf("Account does not exist.\n"); return; }
-    if (!verify2FA(&client)) return; // Centralized Security Call!
+    if (!verify2FA(&client)) return; 
 
     FILE *logPtr = fopen("transactions_log.txt", "r");
     if (logPtr == NULL) { printf(">>> No transactions found. <<<\n"); return; }
@@ -351,7 +366,7 @@ void applyInterest(FILE *fPtr) {
             fseek(fPtr, -sizeof(struct clientData), SEEK_CUR);
             fwrite(&client, sizeof(struct clientData), 1, fPtr);
             fseek(fPtr, 0, SEEK_CUR); 
-            if (logPtr != NULL) fprintf(logPtr, "Acct: %u | Transaction: +%.2f (Interest) | New Balance: %.2f\n", client.acctNum, interest, client.balance);
+            if (logPtr != NULL) fprintf(logPtr, "Acct: %u | Transaction: +₹%.2f (Interest) | New Balance: ₹%.2f\n", client.acctNum, interest, client.balance);
             count++;
         }
     }
@@ -370,11 +385,13 @@ void updateRecord(FILE *fPtr) {
     fread(&client, sizeof(struct clientData), 1, fPtr);
     
     if (client.acctNum == 0) { printf("Account does not exist.\n"); return; }
-    if (!verify2FA(&client)) return; // Centralized Security Call!
+    if (!verify2FA(&client)) return; 
 
-    printf("Current Balance: $%.2f. Enter amount (+ deposit, - withdraw): ", client.balance);
+    printf("Current Balance: ₹%.2f. Enter amount (+ deposit, - withdraw): ", client.balance);
     scanf("%lf", &transaction);
-    double limit = (client.accountType == 'C') ? -500.00 : 0.00;
+    
+    // Realistic Indian Checking Account Overdraft Limit
+    double limit = (client.accountType == 'C') ? -10000.00 : 0.00; 
 
     if (client.balance + transaction < limit) {
         printf(">>> DENIED: Insufficient funds. Overdraft limit reached. <<<\n");
@@ -382,7 +399,7 @@ void updateRecord(FILE *fPtr) {
         client.balance += transaction;
         fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET);
         fwrite(&client, sizeof(struct clientData), 1, fPtr);
-        printf("Updated successfully. New Balance: $%.2f\n", client.balance);
+        printf("Updated successfully. New Balance: ₹%.2f\n", client.balance);
         FILE *logPtr = fopen("transactions_log.txt", "a");
         if (logPtr != NULL) {
             fprintf(logPtr, "Acct: %u | Transaction: %+.2f | New Balance: %.2f\n", client.acctNum, transaction, client.balance);
@@ -410,7 +427,7 @@ void newRecord(FILE *fPtr) {
     printf("Register Biometric Hash (Pick a secret word, e.g., 'THUMB01'): "); 
     scanf("%14s", client.thumbprint);
     
-    printf("Enter Last Name, First Name, Initial Balance: ");
+    printf("Enter Last Name, First Name, Initial Balance (in ₹): ");
     scanf("%14s%9s%lf", client.lastName, client.firstName, &client.balance);
 
     client.acctNum = account;
@@ -419,9 +436,10 @@ void newRecord(FILE *fPtr) {
     printf(">>> Account %u created successfully. <<<\n", account);
 } 
 
+// UPGRADED FEATURE: FOREX & INTERNATIONAL TRANSFERS (INR BASE)
 void transferFunds(FILE *fPtr) {
-    unsigned int srcAccount, destAccount;
-    double amount;
+    unsigned int srcAccount, destAccount, currencyChoice;
+    double amount, finalAmount;
     struct clientData srcClient = {0, 0, "", ' ', "", "", 0.0};
     struct clientData destClient = {0, 0, "", ' ', "", "", 0.0};
 
@@ -431,7 +449,7 @@ void transferFunds(FILE *fPtr) {
     fread(&srcClient, sizeof(struct clientData), 1, fPtr);
     
     if (srcClient.acctNum == 0) { printf("Source account does not exist.\n"); return; }
-    if (!verify2FA(&srcClient)) return; // Centralized Security Call!
+    if (!verify2FA(&srcClient)) return; 
 
     printf("Enter DESTINATION account: ");
     if(scanf("%u", &destAccount) != 1) { clearInputBuffer(); return; }
@@ -441,32 +459,55 @@ void transferFunds(FILE *fPtr) {
     fread(&destClient, sizeof(struct clientData), 1, fPtr);
     if (destClient.acctNum == 0) { printf("Destination account does not exist.\n"); return; }
 
-    printf("Balance: $%.2f. Amount to transfer: ", srcClient.balance); scanf("%lf", &amount);
-    double limit = (srcClient.accountType == 'C') ? -500.00 : 0.00;
+    printf("\n--- SELECT CURRENCY FOR TRANSFER ---\n");
+    printf("1. Indian Rupee (INR) - Standard\n");
+    printf("2. US Dollar (USD) - Exchange Rate: 83.00 INR\n");
+    printf("3. Euro (EUR) - Exchange Rate: 90.00 INR\n");
+    printf("Choice: ");
+    scanf("%u", &currencyChoice);
 
-    if (amount <= 0) printf("Invalid amount.\n");
-    else if (srcClient.balance - amount < limit) printf(">>> TRANSFER DENIED: Insufficient funds.\n");
+    printf("Enter amount to transfer (in chosen currency): "); 
+    scanf("%lf", &amount);
+
+    if (amount <= 0) { printf("Invalid amount.\n"); return; }
+
+    // FOREX Math Conversion (Converting TO INR for deduction)
+    if (currencyChoice == 1) finalAmount = amount; // INR
+    else if (currencyChoice == 2) finalAmount = amount * 83.00; // USD to INR
+    else if (currencyChoice == 3) finalAmount = amount * 90.00; // EUR to INR
+    else { printf("Invalid currency.\n"); return; }
+
+    if (currencyChoice != 1) {
+        printf(">>> FOREX ALERT: Foreign currency converted to ₹%.2f INR <<<\n", finalAmount);
+    }
+
+    double limit = (srcClient.accountType == 'C') ? -10000.00 : 0.00;
+
+    if (srcClient.balance - finalAmount < limit) printf(">>> TRANSFER DENIED: Insufficient funds.\n");
     else {
-        srcClient.balance -= amount;
+        srcClient.balance -= finalAmount;
         fseek(fPtr, (srcAccount - 1) * sizeof(struct clientData), SEEK_SET);
         fwrite(&srcClient, sizeof(struct clientData), 1, fPtr);
-        destClient.balance += amount;
+        
+        destClient.balance += finalAmount;
         fseek(fPtr, (destAccount - 1) * sizeof(struct clientData), SEEK_SET);
         fwrite(&destClient, sizeof(struct clientData), 1, fPtr);
         
-        printf(">>> Transfer successful! New balance: $%.2f <<<\n", srcClient.balance);
+        printf(">>> Transfer successful! New balance: ₹%.2f <<<\n", srcClient.balance);
         FILE *logPtr = fopen("transactions_log.txt", "a");
         if (logPtr != NULL) {
-            fprintf(logPtr, "Acct: %u | Transaction: -%.2f (Transfer to %u) | New Balance: %.2f\n", srcAccount, amount, destAccount, srcClient.balance);
-            fprintf(logPtr, "Acct: %u | Transaction: +%.2f (Transfer from %u) | New Balance: %.2f\n", destAccount, amount, srcAccount, destClient.balance);
+            fprintf(logPtr, "Acct: %u | Transaction: -%.2f (Transfer to %u) | New Balance: %.2f\n", srcAccount, finalAmount, destAccount, srcClient.balance);
+            fprintf(logPtr, "Acct: %u | Transaction: +%.2f (Transfer from %u) | New Balance: %.2f\n", destAccount, finalAmount, srcAccount, destClient.balance);
             fclose(logPtr);
         }
     }
 }
 
+// UPGRADED FEATURE: BANK REVENUE (TRANSACTION FEES)
 void payBill(FILE *fPtr) {
     unsigned int account, billType;
     char billName[20]; double amount;
+    double bankFee = 25.00; // Realistic Indian Bank Fee
     struct clientData client = {0, 0, "", ' ', "", "", 0.0};
 
     printf("\nEnter account number: ");
@@ -475,100 +516,79 @@ void payBill(FILE *fPtr) {
     fread(&client, sizeof(struct clientData), 1, fPtr);
     
     if (client.acctNum == 0) { printf("Account does not exist.\n"); return; }
-    if (!verify2FA(&client)) return; // Centralized Security Call!
+    if (!verify2FA(&client)) return; 
 
     printf("\n1. Electricity  2. Water  \nChoice: "); scanf("%u", &billType);
     if (billType == 1) strcpy(billName, "Electricity Bill");
     else if (billType == 2) strcpy(billName, "Water Bill");
     else { printf("Invalid choice.\n"); return; }
 
-    printf("Enter amount for %s: ", billName); scanf("%lf", &amount);
-    double limit = (client.accountType == 'C') ? -500.00 : 0.00;
+    printf("Enter amount for %s: ₹", billName); scanf("%lf", &amount);
+    double limit = (client.accountType == 'C') ? -10000.00 : 0.00;
+    double totalDeduction = amount + bankFee;
 
-    if (amount <= 0 || client.balance - amount < limit) printf(">>> PAYMENT DENIED.\n");
+    printf("Amount: ₹%.2f + Bank Fee: ₹%.2f = Total: ₹%.2f\n", amount, bankFee, totalDeduction);
+
+    if (amount <= 0 || client.balance - totalDeduction < limit) printf(">>> PAYMENT DENIED: Insufficient funds for bill + fee.\n");
     else {
-        client.balance -= amount;
+        client.balance -= totalDeduction;
         fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET);
         fwrite(&client, sizeof(struct clientData), 1, fPtr);
-        printf(">>> Paid $%.2f successfully! <<<\n", amount);
+        printf(">>> Paid successfully! <<<\n");
         FILE *logPtr = fopen("transactions_log.txt", "a");
-        if (logPtr) { fprintf(logPtr, "Acct: %u | Transaction: -%.2f (Paid: %s) | New Balance: %.2f\n", client.acctNum, amount, billName, client.balance); fclose(logPtr); }
+        if (logPtr) { 
+            fprintf(logPtr, "Acct: %u | Transaction: -%.2f (Paid: %s + Fee) | New Balance: %.2f\n", client.acctNum, totalDeduction, billName, client.balance); 
+            fclose(logPtr); 
+        }
     }
 }
-// ======================= UPGRADED CUSTOMER SERVICE DESK =======================
+
 void requestService(FILE *fPtr) {
     unsigned int account, serviceType;
     struct clientData client = {0, 0, "", ' ', "", "", 0.0};
     
-    // 1. User-Friendly Instructions & Welcome Screen
     printf("\n=================================================\n");
     printf("         CUSTOMER SERVICE & SUPPORT DESK         \n");
     printf("=================================================\n");
-    printf(" Welcome to the 24/7 Support Desk. Submitting a\n");
-    printf(" request here will log a secure ticket with our\n");
-    printf(" human representatives. \n");
-    printf(" Standard Response Time: 24 Business Hours.\n");
-    printf("-------------------------------------------------\n");
-
-    printf("\nEnter your account number to begin: ");
+    printf(" Welcome. Standard Response Time: 24 Business Hours.\n");
+    
+    printf("\nEnter your account number: ");
     if(scanf("%u", &account) != 1) { clearInputBuffer(); return; }
     fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET);
     fread(&client, sizeof(struct clientData), 1, fPtr);
     
-    if (client.acctNum == 0) { printf(">>> ERROR: Account does not exist. <<<\n"); return; }
-    
-    // 2. Centralized Security Call
+    if (client.acctNum == 0) { printf("Account does not exist.\n"); return; }
     if (!verify2FA(&client)) return; 
 
-    // 3. Expanded Service Menu
     printf("\n--- WHAT DO YOU NEED HELP WITH TODAY? ---\n");
-    printf(" 1. Request New Checkbook (Standard Mail)\n");
+    printf(" 1. Request New Checkbook\n");
     printf(" 2. Report Stolen / Lost Debit Card (URGENT)\n");
-    printf(" 3. Request Loan Consultation (Auto / Home / Personal)\n");
-    printf(" 4. Update Personal Details (Address / Phone)\n");
-    printf(" 5. Dispute a Suspicious Transaction (Fraud Alert)\n");
-    printf(" 6. Cancel & Return to Main Menu\n");
+    printf(" 3. Request Loan Consultation\n");
+    printf(" 4. Dispute a Suspicious Transaction\n");
     printf("Choice: ");
     if(scanf("%u", &serviceType) != 1) { clearInputBuffer(); return; }
 
-    if (serviceType == 6) {
-        printf("\n>>> Request cancelled. Returning to menu. <<<\n");
-        return;
-    }
-
     FILE *reqPtr = fopen("service_requests.txt", "a");
-    if (!reqPtr) {
-        printf("\n>>> ERROR: Support database is currently offline. Please try again later. <<<\n");
-        return;
-    }
+    if (!reqPtr) return;
 
-    // 4. Professional Routing & Clear Confirmation Messages
     switch(serviceType) {
         case 1: 
             fprintf(reqPtr, "[TICKET] Acct: %u | Type: CHECKBOOK | Holder: %s %s\n", client.acctNum, client.firstName, client.lastName);
-            printf("\n>>> TICKET LOGGED: A new checkbook will be mailed to your registered address in 3-5 business days. <<<\n");
-            break;
+            printf(">>> TICKET LOGGED: A checkbook will be mailed to you. <<<\n"); break;
         case 2: 
             fprintf(reqPtr, "[URGENT] Acct: %u | Type: STOLEN CARD | Holder: %s %s\n", client.acctNum, client.firstName, client.lastName);
-            printf("\n>>> ALARM TRIGGERED: Your card is instantly locked. Our fraud team will call you within 10 minutes! <<<\n");
-            break;
+            printf(">>> ALARM TRIGGERED: Card locked. We will call you in 10 minutes! <<<\n"); break;
         case 3: 
             fprintf(reqPtr, "[TICKET] Acct: %u | Type: LOAN CONSULT | Holder: %s %s\n", client.acctNum, client.firstName, client.lastName);
-            printf("\n>>> TICKET LOGGED: A dedicated loan officer will call you tomorrow between 9 AM and 5 PM. <<<\n");
-            break;
+            printf(">>> TICKET LOGGED: A loan officer will call you tomorrow. <<<\n"); break;
         case 4:
-            fprintf(reqPtr, "[TICKET] Acct: %u | Type: INFO UPDATE | Holder: %s %s\n", client.acctNum, client.firstName, client.lastName);
-            printf("\n>>> TICKET LOGGED: For security reasons, an agent will contact you by phone to update your address/phone number. <<<\n");
-            break;
-        case 5:
             fprintf(reqPtr, "[URGENT] Acct: %u | Type: FRAUD DISPUTE | Holder: %s %s\n", client.acctNum, client.firstName, client.lastName);
-            printf("\n>>> TICKET LOGGED: Your account is flagged for review. A fraud specialist will investigate your recent transactions. <<<\n");
-            break;
-        default:
-            printf("\n>>> Invalid choice. Request cancelled. <<<\n");
+            printf(">>> TICKET LOGGED: A fraud specialist will investigate immediately. <<<\n"); break;
+        default: printf(">>> Invalid choice. Request cancelled. <<<\n");
     }
     fclose(reqPtr);
 }
+
 void viewRequests(void) {
     char line[150];
     FILE *reqPtr = fopen("service_requests.txt", "r");
@@ -589,7 +609,7 @@ void changePin(FILE *fPtr) {
     fread(&client, sizeof(struct clientData), 1, fPtr);
     
     if (client.acctNum == 0) { printf("Account does not exist.\n"); return; }
-    if (!verify2FA(&client)) return; // Centralized Security Call!
+    if (!verify2FA(&client)) return; 
 
     printf("Enter NEW 4-digit PIN: "); scanf("%u", &newPin);
     client.pin = newPin;
@@ -609,11 +629,11 @@ void deleteRecord(FILE *fPtr) {
     fread(&client, sizeof(struct clientData), 1, fPtr);
 
     if (client.acctNum == 0) { printf("Account does not exist.\n"); return; }
-    if (client.balance < 0) { printf(">>> CANNOT CLOSE: Account overdrawn by $%.2f. <<<\n", (client.balance * -1)); return; }
+    if (client.balance < 0) { printf(">>> CANNOT CLOSE: Account overdrawn by ₹%.2f. <<<\n", (client.balance * -1)); return; }
 
-    if (!verify2FA(&client)) return; // Centralized Security Call!
+    if (!verify2FA(&client)) return; 
 
     fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET);
     fwrite(&blank, sizeof(struct clientData), 1, fPtr);
-    printf(">>> Account closed. Remaining $%.2f dispensed. <<<\n", client.balance);
+    printf(">>> Account closed. Remaining ₹%.2f dispensed. <<<\n", client.balance);
 }
