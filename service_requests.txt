@@ -1,0 +1,4 @@
+Acct: 23 | Request: Loan Call
+[TICKET] Acct: 23 | Type: CHECKBOOK | Holder: hari sriram
+[TICKET] Acct: 23 | Type: INFO UPDATE | Holder: hari sriram
+[URGENT] Acct: 23 | Type: FRAUD DISPUTE | Holder: hari sriram

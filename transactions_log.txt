@@ -1,0 +1,11 @@
+Acct: 23 | Transaction: +1000000.00 | New Balance: 5000000.00
+Acct: 23 | Transaction: -1000000.00 (Transfer to 34) | New Balance: 4000000.00
+Acct: 34 | Transaction: +1000000.00 (Transfer from 23) | New Balance: 6000000.00
+Acct: 1 | Transaction: +0.00 (Interest) | New Balance: 0.00
+Acct: 85 | Transaction: +0.00 (Interest) | New Balance: 0.00
+Acct: 23 | Transaction: +160000.00 (Interest) | New Balance: 4160000.00
+Acct: 34 | Transaction: +240000.00 (Interest) | New Balance: 6240000.00
+Acct: 47 | Transaction: +80.00 (Interest) | New Balance: 2080.00
+Acct: 23 | Transaction: +80000.00 (Interest) | New Balance: 2080000.00
+Acct: 23 | Transaction: -1000000.00 | New Balance: 1080000.00
+Acct: 23 | Transaction: -200.00 (Paid: Electricity Bill) | New Balance: 1079800.00
