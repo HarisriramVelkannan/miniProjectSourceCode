@@ -1,18 +1,42 @@
-// Enterprise Secure Banking System (v8.1) - Localized for INR (₹)
+// VaultFlow Enterprise Banking System (FINAL: Mutex, Hash, QuickSort)
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h> 
 #include <ctype.h> 
+#include <windows.h> // PHASE 2: OS-Level Concurrency & Mutex Locks
 
+// UI COLOR CODES
+#define RED "\x1b[31m"
+#define GREEN "\x1b[32m"
+#define CYAN "\x1b[36m"
+#define YELLOW "\x1b[33m"
+#define RESET "\x1b[0m"
+
+// GLOBAL OS MUTEX LOCK
+HANDLE dbMutex;
+
+// DATABASE SCHEMAS
 struct clientData {
     unsigned int acctNum; 
-    unsigned int pin;     
+    unsigned int pin;     // Irreversible Hash
     char thumbprint[15];  
     char accountType;     
     char lastName[15];    
     char firstName[10];   
     double balance;       
 }; 
+
+struct biometricData {
+    unsigned int acctNum;      
+    char secureHash[65];       
+    int minutiaePoints;        
+    char status[10];           
+};
+
+struct TransactionNode {
+    char logData[150];
+    struct TransactionNode *next;
+};
 
 // Core functionality prototypes
 void newRecord(FILE *fPtr);
@@ -27,11 +51,17 @@ void deleteRecord(FILE *fPtr);
 void displayRecords(FILE *readPtr); 
 void viewRequests(void);            
 void applyInterest(FILE *fPtr);
-void textFile(FILE *readPtr);
+void exportToExcel(FILE *readPtr);  
 void bankAnalytics(FILE *fPtr);     
 void clearInputBuffer(void);
 
-// Security & UX Prototypes
+// Advanced Enterprise Prototypes
+void unlockAccount(void);           
+void displayTopAccounts(FILE *fPtr);
+void swapAccounts(struct clientData* a, struct clientData* b);
+int partition(struct clientData arr[], int low, int high);
+void quickSort(struct clientData arr[], int low, int high);
+unsigned int secureHashPIN(unsigned int pin); // PHASE 3: Hashing Algorithm
 int authenticateUser(void); 
 int verify2FA(struct clientData *client); 
 void printHelp(void);                     
@@ -47,83 +77,110 @@ int main(int argc, char *argv[])
     FILE *cfPtr;         
     unsigned int choice; 
 
-    if ((cfPtr = fopen("credit.dat", "rb+")) == NULL) {
-        printf("Creating new secure database...\n");
-        cfPtr = fopen("credit.dat", "wb+");
-        if (cfPtr == NULL) {
-            printf("Fatal Error: Cannot create database.\n");
-            exit(-1);
-        }
-        struct clientData blankClient = {0, 0, "", ' ', "", "", 0.0};
-        for (int i = 0; i < 100; ++i) {
-            fwrite(&blankClient, sizeof(struct clientData), 1, cfPtr);
-        }
-        printf("System initialized with 100 blank records.\n");
-    }
+    // Initialize OS Mutex Lock for Concurrency Protection
+    dbMutex = CreateMutex(NULL, FALSE, "VaultFlowDBMutex");
 
-    while ((choice = mainMenuChoice()) != 5)
-    {
-        switch (choice)
-        {
-        case 1: transactionMenu(cfPtr); break;
-        case 2: servicesMenu(cfPtr); break;
-        case 3: adminMenu(cfPtr); break;
-        case 4: printHelp(); break; 
-        default: puts("Incorrect choice. Please try again."); break;
+    if ((cfPtr = fopen("credit.dat", "rb+")) == NULL) {
+        printf(RED "FATAL ERROR: credit.dat missing. Run db_seeder.c first." RESET "\n");
+        return -1;
+    }
+    FILE *bioCheck = fopen("biometrics.dat", "rb");
+    if (bioCheck == NULL) {
+        printf(RED "FATAL ERROR: biometrics.dat missing. Run bio_db_setup.c first." RESET "\n");
+        return -1;
+    }
+    fclose(bioCheck);
+
+    while ((choice = mainMenuChoice()) != 5) {
+        switch (choice) {
+            case 1: transactionMenu(cfPtr); break;
+            case 2: servicesMenu(cfPtr); break;
+            case 3: adminMenu(cfPtr); break;
+            case 4: printHelp(); break; 
+            default: puts(RED "Incorrect choice. Please try again." RESET); break;
         } 
     }     
 
     fclose(cfPtr); 
-    printf("\n>>> System safely shut down. Goodbye! <<<\n");
+    CloseHandle(dbMutex); // Release Mutex to OS
+    printf(GREEN "\n>>> System safely shut down. Goodbye! <<<" RESET "\n");
     return 0;
 } 
 
-// ======================= UX & HELP MODULE =======================
-
 void printHelp(void) {
-    printf("\n==========================================================\n");
-    printf("           HOW TO USE THIS BANKING SYSTEM                 \n");
-    printf("==========================================================\n");
-    printf(" 1. 2FA SECURITY: Transactions require your PIN and Hash.\n");
-    printf(" 2. ACCOUNT TYPES: Savings ('S') earns 4%% interest. \n");
-    printf("    Current ('C') has a ₹10,000 overdraft limit.\n");
-    printf(" 3. FEES: Bill payments incur a ₹25.00 bank processing fee.\n");
-    printf(" 4. FOREX: International transfers automatically convert \n");
-    printf("    foreign currencies into INR at current exchange rates.\n");
-    printf("==========================================================\n");
+    printf(CYAN "\n==========================================================\n" RESET);
+    printf("           VAULTFLOW ENTERPRISE ARCHITECTURE              \n");
+    printf(CYAN "==========================================================\n" RESET);
+    printf(" 1. CONCURRENCY: Financial transactions are protected by\n");
+    printf("    Windows OS Mutex Locks to prevent Race Conditions.\n");
+    printf(" 2. CRYPTOGRAPHY: PINs are mathematically secured using\n");
+    printf("    the DJB2 One-Way Hashing Algorithm.\n");
+    printf(" 3. BIG DATA: Leaderboards use an O(N log N) Quick Sort.\n");
+    printf(CYAN "==========================================================\n" RESET);
     printf("Press Enter to return to the Main Menu...");
     clearInputBuffer(); getchar(); 
 }
 
 // ======================= SECURITY MODULES =======================
 
+unsigned int secureHashPIN(unsigned int pin) {
+    unsigned int hash = 5381;
+    char pinStr[10];
+    sprintf(pinStr, "%u", pin); 
+    for (int i = 0; pinStr[i] != '\0'; i++) {
+        hash = ((hash << 5) + hash) + pinStr[i]; 
+    }
+    return hash;
+}
+
 int verify2FA(struct clientData *client) {
-    unsigned int inputPin;
-    char inputThumb[15];
+    unsigned int inputPin, hashedInput;
+    char inputThumb[65];
     int attempts = 3;
+    struct biometricData bioRecord;
+
+    FILE *bioPtr = fopen("biometrics.dat", "rb+");
+    if (bioPtr == NULL) return 0;
+
+    fseek(bioPtr, (client->acctNum - 1) * sizeof(struct biometricData), SEEK_SET);
+    fread(&bioRecord, sizeof(struct biometricData), 1, bioPtr);
+
+    if (strcmp(bioRecord.status, "ACTIVE") != 0) {
+         printf(RED "\n>>> CRITICAL: Account is LOCKED due to fraud. Please see a Bank Admin. <<<" RESET "\n");
+         fclose(bioPtr); return 0;
+    }
 
     while (attempts > 0) {
-        printf("\n--- IDENTITY VERIFICATION (%d attempts remaining) ---\n", attempts);
+        printf(YELLOW "\n--- IDENTITY VERIFICATION (%d attempts remaining) ---" RESET "\n", attempts);
         printf("Enter your 4-digit PIN: ");
         if (scanf("%u", &inputPin) != 1) { clearInputBuffer(); attempts--; continue; }
 
-        if (inputPin != client->pin) {
-            printf(">>> INCORRECT PIN. <<<\n");
+        // PHASE 3: Hash user input and compare to the hash stored on the hard drive
+        hashedInput = secureHashPIN(inputPin);
+
+        if (hashedInput != client->pin) {
+            printf(RED ">>> INCORRECT PIN. <<<" RESET "\n");
             attempts--; continue;
         }
 
-        printf("[ ACTIVATING BIOMETRIC SENSOR ]\n");
-        printf("Simulate thumbprint (Type your registered secret word): ");
-        scanf("%14s", inputThumb);
+        printf(CYAN "[ ACTIVATING BIOMETRIC SENSOR ]\n" RESET);
+        printf("Simulate thumbprint (Enter Secure Hash): ");
+        scanf("%64s", inputThumb);
 
-        if (strcmp(inputThumb, client->thumbprint) != 0) {
-            printf(">>> BIOMETRIC MATCH FAILED. <<<\n");
+        if (strcmp(inputThumb, bioRecord.secureHash) != 0) {
+            printf(RED ">>> BIOMETRIC MATCH FAILED. <<<" RESET "\n");
             attempts--; continue;
         }
-        printf(">>> IDENTITY VERIFIED. ACCESS GRANTED. <<<\n\n");
-        return 1; 
+        
+        printf(GREEN ">>> IDENTITY VERIFIED. ACCESS GRANTED. <<<" RESET "\n\n");
+        fclose(bioPtr); return 1; 
     }
-    printf("\n>>> SECURITY LOCKOUT: Too many failed attempts. Returning to menu. <<<\n");
+
+    printf(RED "\n>>> SECURITY BREACH DETECTED: Permanently Locking Account. <<<" RESET "\n");
+    strcpy(bioRecord.status, "LOCKED");
+    fseek(bioPtr, (client->acctNum - 1) * sizeof(struct biometricData), SEEK_SET);
+    fwrite(&bioRecord, sizeof(struct biometricData), 1, bioPtr);
+    fclose(bioPtr);
     return 0; 
 }
 
@@ -133,39 +190,35 @@ int authenticateUser(void) {
     char inputUsername[20], inputPassword[20];
     int attempts = 0;
 
-    printf("\n--- SECURE ADMIN LOGIN REQUIRED ---\n");
+    printf(YELLOW "\n--- SECURE ADMIN LOGIN REQUIRED ---" RESET "\n");
     while (attempts < 3) {
         printf("Username: "); scanf("%19s", inputUsername); clearInputBuffer(); 
         printf("Password: "); scanf("%19s", inputPassword); clearInputBuffer();
 
         if (strcmp(inputUsername, correctUsername) == 0 && strcmp(inputPassword, correctPassword) == 0) {
-            printf("\n>>> ACCESS GRANTED. Welcome to the Admin Panel. <<<\n");
+            printf(GREEN "\n>>> ACCESS GRANTED. Welcome to the Admin Panel. <<<" RESET "\n");
             return 1;
         }
-        printf("Invalid credentials. Attempt %d/3\n", ++attempts);
+        printf(RED "Invalid credentials. Attempt %d/3\n" RESET, ++attempts);
     }
-    printf("\n>>> SECURITY LOCKOUT. <<<\n");
+    printf(RED "\n>>> SECURITY LOCKOUT. <<<" RESET "\n");
     return 0; 
 }
 
-void clearInputBuffer(void) {
-    int c;
-    while ((c = getchar()) != '\n' && c != EOF);
-}
+void clearInputBuffer(void) { int c; while ((c = getchar()) != '\n' && c != EOF); }
 
 // ======================= MENU ROUTERS =======================
-
 unsigned int mainMenuChoice(void) {
     unsigned int choice; 
-    printf("\n=================================================\n");
-    printf("      VAULTFLOW ENTERPRISE BANKING (v8.1)        \n");
-    printf("=================================================\n");
+    printf(CYAN "\n=================================================\n" RESET);
+    printf("      VAULTFLOW ENTERPRISE BANKING (v11.0)       \n");
+    printf(CYAN "=================================================\n" RESET);
     printf("   1. Financial Transactions\n");
     printf("   2. Account Services & Inquiries\n");
     printf("   3. Administrator Panel\n");
     printf("   4. Help & Instructions\n");
     printf("   5. Exit System\n");
-    printf("=================================================\n");
+    printf(CYAN "=================================================\n" RESET);
     printf("Select Category: ");
     if (scanf("%u", &choice) != 1) { clearInputBuffer(); return 0; }
     return choice;
@@ -174,10 +227,10 @@ unsigned int mainMenuChoice(void) {
 void transactionMenu(FILE *fPtr) {
     unsigned int choice;
     while(1) {
-        printf("\n--- [ FINANCIAL TRANSACTIONS ] ---\n");
+        printf(CYAN "\n--- [ FINANCIAL TRANSACTIONS ] ---" RESET "\n");
         printf(" 1. Deposit / Withdraw Funds\n");
         printf(" 2. Transfer Funds (Domestic & International)\n");
-        printf(" 3. Pay Utility Bills (₹25.00 Fee Applies)\n");
+        printf(" 3. Pay Utility Bills\n");
         printf(" 4. Return to Main Menu\n");
         printf("Choice: ");
         if (scanf("%u", &choice) != 1) { clearInputBuffer(); continue; }
@@ -187,7 +240,7 @@ void transactionMenu(FILE *fPtr) {
             case 2: transferFunds(fPtr); break;
             case 3: payBill(fPtr); break;
             case 4: return; 
-            default: printf("Invalid option.\n");
+            default: printf(RED "Invalid option.\n" RESET);
         }
     }
 }
@@ -195,11 +248,11 @@ void transactionMenu(FILE *fPtr) {
 void servicesMenu(FILE *fPtr) {
     unsigned int choice;
     while(1) {
-        printf("\n--- [ ACCOUNT SERVICES & INQUIRIES ] ---\n");
+        printf(CYAN "\n--- [ ACCOUNT SERVICES & INQUIRIES ] ---" RESET "\n");
         printf(" 1. Check Balance & Account Details\n");
-        printf(" 2. Print Mini-Statement\n");
+        printf(" 2. Print Mini-Statement (Linked List Memory)\n");
         printf(" 3. Change Account PIN\n");
-        printf(" 4. Customer Service Desk (Requests)\n");
+        printf(" 4. Customer Service Desk (Auto-Loans & Support)\n");
         printf(" 5. Close Account\n");
         printf(" 6. Return to Main Menu\n");
         printf("Choice: ");
@@ -212,24 +265,25 @@ void servicesMenu(FILE *fPtr) {
             case 4: requestService(fPtr); break;
             case 5: deleteRecord(fPtr); break;
             case 6: return; 
-            default: printf("Invalid option.\n");
+            default: printf(RED "Invalid option.\n" RESET);
         }
     }
 }
 
 void adminMenu(FILE *fPtr) {
     if (authenticateUser() == 0) return; 
-
     unsigned int choice;
     while(1) {
-        printf("\n--- [ ADMINISTRATOR PANEL ] ---\n");
+        printf(CYAN "\n--- [ ADMINISTRATOR PANEL ] ---" RESET "\n");
         printf(" 1. Open New Account\n");
         printf(" 2. View All Active Accounts\n");
-        printf(" 3. View Bank Analytics Dashboard (Macro Report)\n"); 
-        printf(" 4. Run Batch Process: Apply 4%% Interest\n");
-        printf(" 5. View Pending Customer Service Requests\n");
-        printf(" 6. Export Accounts Database (.txt)\n");
-        printf(" 7. Logout & Return to Main Menu\n");
+        printf(" 3. View Bank Analytics Dashboard\n"); 
+        printf(" 4. View Top 10 Wealthiest Accounts (Quick Sort)\n"); 
+        printf(" 5. Run Batch Process: Apply 4%% Interest\n");
+        printf(" 6. View Pending Customer Service Requests\n");
+        printf(" 7. Unlock Frozen Account (Security Override)\n");     
+        printf(" 8. Export Data to Microsoft Excel (.csv)\n");
+        printf(" 9. Logout & Return to Main Menu\n");
         printf("Choice: ");
         if (scanf("%u", &choice) != 1) { clearInputBuffer(); continue; }
 
@@ -237,403 +291,334 @@ void adminMenu(FILE *fPtr) {
             case 1: newRecord(fPtr); break;
             case 2: displayRecords(fPtr); break;
             case 3: bankAnalytics(fPtr); break; 
-            case 4: applyInterest(fPtr); break;
-            case 5: viewRequests(); break;
-            case 6: textFile(fPtr); break;
-            case 7: printf(">>> Admin Logged Out. <<<\n"); return; 
-            default: printf("Invalid option.\n");
+            case 4: displayTopAccounts(fPtr); break; 
+            case 5: applyInterest(fPtr); break;
+            case 6: viewRequests(); break;
+            case 7: unlockAccount(); break;
+            case 8: exportToExcel(fPtr); break;
+            case 9: printf(GREEN ">>> Admin Logged Out. <<<" RESET "\n"); return; 
+            default: printf(RED "Invalid option.\n" RESET);
         }
     }
 }
 
-// ======================= CORE FUNCTIONS =======================
+// ======================= ADVANCED TECH & DSA MODULE =======================
 
-void bankAnalytics(FILE *fPtr) {
-    struct clientData client = {0, 0, "", ' ', "", "", 0.0};
-    int totalAccounts = 0;
-    int savingsCount = 0, currentCount = 0;
-    double totalLiquidity = 0.0;
-    double totalDebt = 0.0;
+void swapAccounts(struct clientData* a, struct clientData* b) {
+    struct clientData t = *a; *a = *b; *b = t;
+}
 
+int partition(struct clientData arr[], int low, int high) {
+    double pivot = arr[high].balance; 
+    int i = (low - 1); 
+    for (int j = low; j <= high - 1; j++) {
+        if (arr[j].balance >= pivot) {
+            i++; swapAccounts(&arr[i], &arr[j]);
+        }
+    }
+    swapAccounts(&arr[i + 1], &arr[high]);
+    return (i + 1);
+}
+
+void quickSort(struct clientData arr[], int low, int high) {
+    if (low < high) {
+        int pi = partition(arr, low, high); 
+        quickSort(arr, low, pi - 1);        
+        quickSort(arr, pi + 1, high);       
+    }
+}
+
+void displayTopAccounts(FILE *fPtr) {
+    struct clientData accounts[100]; int count = 0;
     rewind(fPtr);
-    while (fread(&client, sizeof(struct clientData), 1, fPtr)) {
-        if (client.acctNum != 0) {
-            totalAccounts++;
-            if (client.accountType == 'S') savingsCount++;
-            else currentCount++;
-
-            if (client.balance >= 0) totalLiquidity += client.balance;
-            else totalDebt += (client.balance * -1); 
-        }
+    while (fread(&accounts[count], sizeof(struct clientData), 1, fPtr)) {
+        if (accounts[count].acctNum != 0) count++;
     }
+    if (count == 0) { printf(YELLOW ">>> No accounts found in database. <<<" RESET "\n"); return; }
+    
+    quickSort(accounts, 0, count - 1);
 
-    printf("\n=================================================\n");
-    printf("         GLOBAL BANK ANALYTICS DASHBOARD         \n");
-    printf("=================================================\n");
-    printf(" Total Active Accounts : %d\n", totalAccounts);
-    printf("   -> Savings Accounts : %d\n", savingsCount);
-    printf("   -> Current Accounts : %d\n", currentCount);
-    printf("-------------------------------------------------\n");
-    printf(" Total Bank Liquidity  : ₹%.2f (Assets)\n", totalLiquidity);
-    printf(" Total Outstanding Debt: ₹%.2f (Overdrafts)\n", totalDebt);
-    printf("=================================================\n");
+    printf(CYAN "\n=================================================\n" RESET);
+    printf("        TOP WEALTHIEST ACCOUNTS LEADERBOARD      \n");
+    printf(CYAN "=================================================\n" RESET);
+    for(int i = 0; i < count && i < 10; i++) {
+        printf(" #%d | Acct %u | %s %s | Rs. %.2f\n", 
+               i+1, accounts[i].acctNum, accounts[i].firstName, accounts[i].lastName, accounts[i].balance);
+    }
+    printf(CYAN "=================================================\n" RESET);
 }
 
-void textFile(FILE *readPtr) {
-    FILE *writePtr; 
-    struct clientData client = {0, 0, "", ' ', "", "", 0.0};
-    if ((writePtr = fopen("accounts.txt", "w")) == NULL) puts("File error.");
+void unlockAccount(void) {
+    unsigned int targetAccount; struct biometricData bioRecord;
+    printf("\nEnter Account Number to unlock: ");
+    if(scanf("%u", &targetAccount) != 1) { clearInputBuffer(); return; }
+
+    FILE *bioPtr = fopen("biometrics.dat", "rb+");
+    if (!bioPtr) return;
+
+    fseek(bioPtr, (targetAccount - 1) * sizeof(struct biometricData), SEEK_SET);
+    fread(&bioRecord, sizeof(struct biometricData), 1, bioPtr);
+
+    if (bioRecord.acctNum == 0) printf(YELLOW ">>> Biometric record does not exist. <<<" RESET "\n");
+    else if (strcmp(bioRecord.status, "ACTIVE") == 0) printf(YELLOW ">>> Account is already ACTIVE. <<<" RESET "\n");
     else {
-        rewind(readPtr);
-        fprintf(writePtr, "%-6s%-6s%-16s%-11s%10s\n", "Acct", "Type", "Last Name", "First Name", "Balance");
-        while (fread(&client, sizeof(struct clientData), 1, readPtr)) {
-            if (client.acctNum != 0)
-                fprintf(writePtr, "%-6u%-6c%-16s%-11s%10.2f\n", client.acctNum, client.accountType, client.lastName, client.firstName, client.balance);
-        }
-        fclose(writePtr);
-        printf(">>> Export to accounts.txt complete. <<<\n");
+        strcpy(bioRecord.status, "ACTIVE");
+        fseek(bioPtr, (targetAccount - 1) * sizeof(struct biometricData), SEEK_SET);
+        fwrite(&bioRecord, sizeof(struct biometricData), 1, bioPtr);
+        printf(GREEN ">>> SUCCESS: Account %u has been UNLOCKED. <<<" RESET "\n", targetAccount);
     }
+    fclose(bioPtr);
 }
 
-void displayRecords(FILE *readPtr) {
-    struct clientData client = {0, 0, "", ' ', "", "", 0.0};
-    rewind(readPtr); 
-    printf("\n%-6s%-6s%-16s%-11s%12s\n", "Acct", "Type", "Last Name", "First Name", "Balance(₹)");
-    printf("----------------------------------------------------\n");
-    while (fread(&client, sizeof(struct clientData), 1, readPtr)) {
-        if (client.acctNum != 0)
-            printf("%-6u%-6c%-16s%-11s%12.2f\n", client.acctNum, client.accountType, client.lastName, client.firstName, client.balance);
-    }
-    printf("----------------------------------------------------\n");
-}
-
-void searchAccount(FILE *fPtr) {
-    unsigned int account;
-    struct clientData client = {0, 0, "", ' ', "", "", 0.0};
-    printf("\nEnter account number to check details (1-100): ");
-    if(scanf("%u", &account) != 1) { clearInputBuffer(); return; }
-    fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET);
-    fread(&client, sizeof(struct clientData), 1, fPtr);
-    
-    if (client.acctNum == 0) { printf(">>> Account #%u is empty. <<<\n", account); return; }
-    if (!verify2FA(&client)) return; 
-
-    printf("\n======= ACCOUNT DETAILS =======\n");
-    printf("Account Number : %u\n", client.acctNum);
-    printf("Account Holder : %s %s\n", client.firstName, client.lastName);
-    printf("Account Type   : %s\n", (client.accountType == 'S') ? "Savings" : "Current");
-    printf("Current Balance: ₹%.2f\n", client.balance);
-    printf("===============================\n");
-}
-
-void miniStatement(FILE *fPtr) {
-    unsigned int account;
-    struct clientData client = {0, 0, "", ' ', "", "", 0.0};
-    char searchStr[30], line[150];
-    int found = 0;
-
-    printf("\nEnter account number: ");
-    if(scanf("%u", &account) != 1) { clearInputBuffer(); return; }
-    fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET);
-    fread(&client, sizeof(struct clientData), 1, fPtr);
-    
-    if (client.acctNum == 0) { printf("Account does not exist.\n"); return; }
-    if (!verify2FA(&client)) return; 
-
-    FILE *logPtr = fopen("transactions_log.txt", "r");
-    if (logPtr == NULL) { printf(">>> No transactions found. <<<\n"); return; }
-
-    printf("\n======= MINI STATEMENT FOR ACCT %u =======\n", account);
-    sprintf(searchStr, "Acct: %u |", account);
-    while (fgets(line, sizeof(line), logPtr) != NULL) {
-        if (strstr(line, searchStr) != NULL) { printf("%s", line); found = 1; }
-    }
-    if (!found) printf("No recent transaction history.\n");
-    printf("==========================================\n");
-    fclose(logPtr);
-}
-
-void applyInterest(FILE *fPtr) {
-    struct clientData client = {0, 0, "", ' ', "", "", 0.0};
-    int count = 0;
-    FILE *logPtr = fopen("transactions_log.txt", "a");
-
-    rewind(fPtr); 
-    while (fread(&client, sizeof(struct clientData), 1, fPtr) == 1) {
-        if (client.acctNum != 0 && client.accountType == 'S' && client.balance > 0) {
-            double interest = client.balance * 0.04; 
-            client.balance += interest;
-            fseek(fPtr, -sizeof(struct clientData), SEEK_CUR);
-            fwrite(&client, sizeof(struct clientData), 1, fPtr);
-            fseek(fPtr, 0, SEEK_CUR); 
-            if (logPtr != NULL) fprintf(logPtr, "Acct: %u | Transaction: +₹%.2f (Interest) | New Balance: ₹%.2f\n", client.acctNum, interest, client.balance);
-            count++;
-        }
-    }
-    if (logPtr != NULL) fclose(logPtr);
-    printf("\n>>> BATCH SUCCESS: 4%% Annual Interest applied to %d Savings accounts! <<<\n", count);
-}
+// ======================= CORE BUSINESS LOGIC =======================
 
 void updateRecord(FILE *fPtr) {
-    unsigned int account;
-    double transaction;   
-    struct clientData client = {0, 0, "", ' ', "", "", 0.0};
-
-    printf("\nEnter account to update (1-100): ");
-    if(scanf("%u", &account) != 1) { clearInputBuffer(); return; }
+    unsigned int account; double transaction; struct clientData client = {0};
+    printf("\nEnter account: "); scanf("%u", &account);
     fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET);
     fread(&client, sizeof(struct clientData), 1, fPtr);
+    if (client.acctNum == 0 || !verify2FA(&client)) return; 
     
-    if (client.acctNum == 0) { printf("Account does not exist.\n"); return; }
-    if (!verify2FA(&client)) return; 
-
-    printf("Current Balance: ₹%.2f. Enter amount (+ deposit, - withdraw): ", client.balance);
-    scanf("%lf", &transaction);
-    
-    // Realistic Indian Checking Account Overdraft Limit
+    printf("Amount (+ deposit, - withdraw): "); scanf("%lf", &transaction);
     double limit = (client.accountType == 'C') ? -10000.00 : 0.00; 
-
     if (client.balance + transaction < limit) {
-        printf(">>> DENIED: Insufficient funds. Overdraft limit reached. <<<\n");
-    } else {
-        client.balance += transaction;
-        fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET);
-        fwrite(&client, sizeof(struct clientData), 1, fPtr);
-        printf("Updated successfully. New Balance: ₹%.2f\n", client.balance);
-        FILE *logPtr = fopen("transactions_log.txt", "a");
-        if (logPtr != NULL) {
-            fprintf(logPtr, "Acct: %u | Transaction: %+.2f | New Balance: %.2f\n", client.acctNum, transaction, client.balance);
-            fclose(logPtr);
-        }
+        printf(RED ">>> DENIED: Overdraft Limit Exceeded. <<<" RESET "\n"); return;
     }
-}
 
-void newRecord(FILE *fPtr) {
-    struct clientData client = {0, 0, "", ' ', "", "", 0.0};
-    unsigned int account; 
-    
-    printf("\nAssign Account Number (1-100): ");
-    if(scanf("%u", &account) != 1) { clearInputBuffer(); return; }
-    fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET);
-    fread(&client, sizeof(struct clientData), 1, fPtr);
-    if (client.acctNum != 0) { printf("Account already exists.\n"); return; }
-
-    printf("Select Account Type ('S' for Savings, 'C' for Current): ");
-    scanf(" %c", &client.accountType);
-    client.accountType = toupper(client.accountType); 
-    if (client.accountType != 'S' && client.accountType != 'C') { printf("Invalid Type.\n"); return; }
-
-    printf("Set a 4-digit PIN: "); scanf("%u", &client.pin);
-    printf("Register Biometric Hash (Pick a secret word, e.g., 'THUMB01'): "); 
-    scanf("%14s", client.thumbprint);
-    
-    printf("Enter Last Name, First Name, Initial Balance (in ₹): ");
-    scanf("%14s%9s%lf", client.lastName, client.firstName, &client.balance);
-
-    client.acctNum = account;
+    // PHASE 2: MUTEX LOCK INITIATED FOR SAFE FILE WRITE
+    WaitForSingleObject(dbMutex, INFINITE); 
+    client.balance += transaction;
     fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET);
     fwrite(&client, sizeof(struct clientData), 1, fPtr);
-    printf(">>> Account %u created successfully. <<<\n", account);
-} 
+    ReleaseMutex(dbMutex); 
 
-// UPGRADED FEATURE: FOREX & INTERNATIONAL TRANSFERS (INR BASE)
+    printf(GREEN "Updated! New Balance: Rs. %.2f\n" RESET, client.balance);
+    FILE *logPtr = fopen("transactions_log.txt", "a");
+    if (logPtr) { fprintf(logPtr, "Acct: %u | Transaction: %+.2f | New Balance: %.2f\n", client.acctNum, transaction, client.balance); fclose(logPtr); }
+}
+
 void transferFunds(FILE *fPtr) {
-    unsigned int srcAccount, destAccount, currencyChoice;
-    double amount, finalAmount;
-    struct clientData srcClient = {0, 0, "", ' ', "", "", 0.0};
-    struct clientData destClient = {0, 0, "", ' ', "", "", 0.0};
-
-    printf("\nEnter YOUR account number (Source): ");
-    if(scanf("%u", &srcAccount) != 1) { clearInputBuffer(); return; }
+    unsigned int srcAccount, destAccount; double amount;
+    struct clientData srcClient = {0}, destClient = {0};
+    printf("\nSource account: "); scanf("%u", &srcAccount);
     fseek(fPtr, (srcAccount - 1) * sizeof(struct clientData), SEEK_SET);
     fread(&srcClient, sizeof(struct clientData), 1, fPtr);
+    if (srcClient.acctNum == 0 || !verify2FA(&srcClient)) return; 
     
-    if (srcClient.acctNum == 0) { printf("Source account does not exist.\n"); return; }
-    if (!verify2FA(&srcClient)) return; 
-
-    printf("Enter DESTINATION account: ");
-    if(scanf("%u", &destAccount) != 1) { clearInputBuffer(); return; }
-    if (srcAccount == destAccount) { printf("Cannot transfer to same account.\n"); return; }
-    
+    printf("Destination account: "); scanf("%u", &destAccount);
     fseek(fPtr, (destAccount - 1) * sizeof(struct clientData), SEEK_SET);
     fread(&destClient, sizeof(struct clientData), 1, fPtr);
-    if (destClient.acctNum == 0) { printf("Destination account does not exist.\n"); return; }
-
-    printf("\n--- SELECT CURRENCY FOR TRANSFER ---\n");
-    printf("1. Indian Rupee (INR) - Standard\n");
-    printf("2. US Dollar (USD) - Exchange Rate: 83.00 INR\n");
-    printf("3. Euro (EUR) - Exchange Rate: 90.00 INR\n");
-    printf("Choice: ");
-    scanf("%u", &currencyChoice);
-
-    printf("Enter amount to transfer (in chosen currency): "); 
-    scanf("%lf", &amount);
-
-    if (amount <= 0) { printf("Invalid amount.\n"); return; }
-
-    // FOREX Math Conversion (Converting TO INR for deduction)
-    if (currencyChoice == 1) finalAmount = amount; // INR
-    else if (currencyChoice == 2) finalAmount = amount * 83.00; // USD to INR
-    else if (currencyChoice == 3) finalAmount = amount * 90.00; // EUR to INR
-    else { printf("Invalid currency.\n"); return; }
-
-    if (currencyChoice != 1) {
-        printf(">>> FOREX ALERT: Foreign currency converted to ₹%.2f INR <<<\n", finalAmount);
+    if (destClient.acctNum == 0) { printf(RED "Destination empty.\n" RESET); return; }
+    
+    printf("Amount to transfer (Rs): "); scanf("%lf", &amount);
+    if (srcClient.balance - amount < ((srcClient.accountType == 'C') ? -10000.00 : 0.00)) {
+        printf(RED ">>> DENIED: Insufficient Funds. <<<" RESET "\n"); return;
     }
 
-    double limit = (srcClient.accountType == 'C') ? -10000.00 : 0.00;
+    // PHASE 2: MUTEX LOCK INITIATED
+    WaitForSingleObject(dbMutex, INFINITE);
+    srcClient.balance -= amount; destClient.balance += amount;
+    fseek(fPtr, (srcAccount - 1) * sizeof(struct clientData), SEEK_SET); fwrite(&srcClient, sizeof(struct clientData), 1, fPtr);
+    fseek(fPtr, (destAccount - 1) * sizeof(struct clientData), SEEK_SET); fwrite(&destClient, sizeof(struct clientData), 1, fPtr);
+    ReleaseMutex(dbMutex);
 
-    if (srcClient.balance - finalAmount < limit) printf(">>> TRANSFER DENIED: Insufficient funds.\n");
-    else {
-        srcClient.balance -= finalAmount;
-        fseek(fPtr, (srcAccount - 1) * sizeof(struct clientData), SEEK_SET);
-        fwrite(&srcClient, sizeof(struct clientData), 1, fPtr);
-        
-        destClient.balance += finalAmount;
-        fseek(fPtr, (destAccount - 1) * sizeof(struct clientData), SEEK_SET);
-        fwrite(&destClient, sizeof(struct clientData), 1, fPtr);
-        
-        printf(">>> Transfer successful! New balance: ₹%.2f <<<\n", srcClient.balance);
-        FILE *logPtr = fopen("transactions_log.txt", "a");
-        if (logPtr != NULL) {
-            fprintf(logPtr, "Acct: %u | Transaction: -%.2f (Transfer to %u) | New Balance: %.2f\n", srcAccount, finalAmount, destAccount, srcClient.balance);
-            fprintf(logPtr, "Acct: %u | Transaction: +%.2f (Transfer from %u) | New Balance: %.2f\n", destAccount, finalAmount, srcAccount, destClient.balance);
-            fclose(logPtr);
-        }
+    printf(GREEN ">>> Transfer successful! <<<" RESET "\n");
+    FILE *logPtr = fopen("transactions_log.txt", "a");
+    if (logPtr) {
+        fprintf(logPtr, "Acct: %u | Transfer TO %u: -%.2f | Balance: %.2f\n", srcAccount, destAccount, amount, srcClient.balance);
+        fprintf(logPtr, "Acct: %u | Transfer FROM %u: +%.2f | Balance: %.2f\n", destAccount, srcAccount, amount, destClient.balance);
+        fclose(logPtr);
     }
 }
 
-// UPGRADED FEATURE: BANK REVENUE (TRANSACTION FEES)
-void payBill(FILE *fPtr) {
-    unsigned int account, billType;
-    char billName[20]; double amount;
-    double bankFee = 25.00; // Realistic Indian Bank Fee
-    struct clientData client = {0, 0, "", ' ', "", "", 0.0};
-
-    printf("\nEnter account number: ");
-    if(scanf("%u", &account) != 1) { clearInputBuffer(); return; }
+// ======================= STANDARD SYSTEM FUNCTIONS =======================
+void miniStatement(FILE *fPtr) {
+    unsigned int account; struct clientData client = {0}; char searchStr[30], line[150]; 
+    printf("\nEnter account number: "); scanf("%u", &account);
     fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET);
     fread(&client, sizeof(struct clientData), 1, fPtr);
-    
-    if (client.acctNum == 0) { printf("Account does not exist.\n"); return; }
-    if (!verify2FA(&client)) return; 
+    if (client.acctNum == 0 || !verify2FA(&client)) return; 
 
-    printf("\n1. Electricity  2. Water  \nChoice: "); scanf("%u", &billType);
-    if (billType == 1) strcpy(billName, "Electricity Bill");
-    else if (billType == 2) strcpy(billName, "Water Bill");
-    else { printf("Invalid choice.\n"); return; }
-
-    printf("Enter amount for %s: ₹", billName); scanf("%lf", &amount);
-    double limit = (client.accountType == 'C') ? -10000.00 : 0.00;
-    double totalDeduction = amount + bankFee;
-
-    printf("Amount: ₹%.2f + Bank Fee: ₹%.2f = Total: ₹%.2f\n", amount, bankFee, totalDeduction);
-
-    if (amount <= 0 || client.balance - totalDeduction < limit) printf(">>> PAYMENT DENIED: Insufficient funds for bill + fee.\n");
-    else {
-        client.balance -= totalDeduction;
-        fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET);
-        fwrite(&client, sizeof(struct clientData), 1, fPtr);
-        printf(">>> Paid successfully! <<<\n");
-        FILE *logPtr = fopen("transactions_log.txt", "a");
-        if (logPtr) { 
-            fprintf(logPtr, "Acct: %u | Transaction: -%.2f (Paid: %s + Fee) | New Balance: %.2f\n", client.acctNum, totalDeduction, billName, client.balance); 
-            fclose(logPtr); 
+    FILE *logPtr = fopen("transactions_log.txt", "r");
+    if (!logPtr) return;
+    struct TransactionNode *head = NULL, *current = NULL, *newNode = NULL;
+    sprintf(searchStr, "Acct: %u |", account);
+    while (fgets(line, sizeof(line), logPtr)) {
+        if (strstr(line, searchStr)) {
+            newNode = (struct TransactionNode*)malloc(sizeof(struct TransactionNode));
+            strcpy(newNode->logData, line); newNode->next = NULL;
+            if (head == NULL) { head = newNode; current = newNode; } 
+            else { current->next = newNode; current = newNode; }
         }
     }
+    fclose(logPtr);
+    printf(CYAN "\n======= MINI STATEMENT FOR ACCT %u =======" RESET "\n", account);
+    if (head == NULL) printf("No recent transaction history.\n");
+    else { current = head; while (current != NULL) { printf("%s", current->logData); current = current->next; } }
+    printf(CYAN "==========================================" RESET "\n");
+    current = head; while (current != NULL) { struct TransactionNode *temp = current; current = current->next; free(temp); }
+}
+
+void exportToExcel(FILE *readPtr) {
+    FILE *writePtr; struct clientData client = {0};
+    if ((writePtr = fopen("bank_database.csv", "w")) == NULL) return;
+    rewind(readPtr); fprintf(writePtr, "Account Number,Account Type,Last Name,First Name,Balance (Rs)\n");
+    while (fread(&client, sizeof(struct clientData), 1, readPtr)) {
+        if (client.acctNum != 0) fprintf(writePtr, "%u,%c,%s,%s,%.2f\n", client.acctNum, client.accountType, client.lastName, client.firstName, client.balance);
+    }
+    fclose(writePtr); printf(GREEN ">>> SUCCESS: Database exported to bank_database.csv! <<<" RESET "\n");
 }
 
 void requestService(FILE *fPtr) {
-    unsigned int account, serviceType;
-    struct clientData client = {0, 0, "", ' ', "", "", 0.0};
-    
-    printf("\n=================================================\n");
-    printf("         CUSTOMER SERVICE & SUPPORT DESK         \n");
-    printf("=================================================\n");
-    printf(" Welcome. Standard Response Time: 24 Business Hours.\n");
-    
-    printf("\nEnter your account number: ");
-    if(scanf("%u", &account) != 1) { clearInputBuffer(); return; }
+    unsigned int account, serviceType; struct clientData client = {0};
+    printf("\nEnter your account number: "); scanf("%u", &account);
     fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET);
     fread(&client, sizeof(struct clientData), 1, fPtr);
-    
-    if (client.acctNum == 0) { printf("Account does not exist.\n"); return; }
-    if (!verify2FA(&client)) return; 
+    if (client.acctNum == 0 || !verify2FA(&client)) return; 
 
-    printf("\n--- WHAT DO YOU NEED HELP WITH TODAY? ---\n");
-    printf(" 1. Request New Checkbook\n");
-    printf(" 2. Report Stolen / Lost Debit Card (URGENT)\n");
-    printf(" 3. Request Loan Consultation\n");
-    printf(" 4. Dispute a Suspicious Transaction\n");
-    printf("Choice: ");
+    printf(CYAN "\n--- WHAT DO YOU NEED HELP WITH TODAY? ---" RESET "\n");
+    printf(" 1. Request New Checkbook\n 2. Report Stolen Card\n 3. Auto-Loan Application\nChoice: ");
     if(scanf("%u", &serviceType) != 1) { clearInputBuffer(); return; }
 
+    if (serviceType == 3) {
+        printf(YELLOW "\n>>> AI ANALYZING FINANCIAL HISTORY..." RESET "\n");
+        int creditScore = 500; creditScore += (int)(client.balance / 10000) * 10; 
+        if (client.balance < 0) creditScore -= 100;        
+        if (client.accountType == 'S') creditScore += 25;  
+        if (creditScore > 900) creditScore = 900;
+        printf(">>> CREDIT SCORE: %d / 900\n", creditScore);
+        if (creditScore >= 600) {
+            printf(GREEN ">>> APPROVED! Rs. 50,000 deposited. 5%% Fee deducted." RESET "\n");
+            
+            WaitForSingleObject(dbMutex, INFINITE); // MUTEX LOCK
+            client.balance += (50000.00 - 2500.00); 
+            fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET);
+            fwrite(&client, sizeof(struct clientData), 1, fPtr);
+            ReleaseMutex(dbMutex);
+            
+        } else printf(RED ">>> DENIED: Credit score is too low." RESET "\n");
+        return;
+    }
     FILE *reqPtr = fopen("service_requests.txt", "a");
     if (!reqPtr) return;
-
-    switch(serviceType) {
-        case 1: 
-            fprintf(reqPtr, "[TICKET] Acct: %u | Type: CHECKBOOK | Holder: %s %s\n", client.acctNum, client.firstName, client.lastName);
-            printf(">>> TICKET LOGGED: A checkbook will be mailed to you. <<<\n"); break;
-        case 2: 
-            fprintf(reqPtr, "[URGENT] Acct: %u | Type: STOLEN CARD | Holder: %s %s\n", client.acctNum, client.firstName, client.lastName);
-            printf(">>> ALARM TRIGGERED: Card locked. We will call you in 10 minutes! <<<\n"); break;
-        case 3: 
-            fprintf(reqPtr, "[TICKET] Acct: %u | Type: LOAN CONSULT | Holder: %s %s\n", client.acctNum, client.firstName, client.lastName);
-            printf(">>> TICKET LOGGED: A loan officer will call you tomorrow. <<<\n"); break;
-        case 4:
-            fprintf(reqPtr, "[URGENT] Acct: %u | Type: FRAUD DISPUTE | Holder: %s %s\n", client.acctNum, client.firstName, client.lastName);
-            printf(">>> TICKET LOGGED: A fraud specialist will investigate immediately. <<<\n"); break;
-        default: printf(">>> Invalid choice. Request cancelled. <<<\n");
-    }
+    if (serviceType == 1) { fprintf(reqPtr, "[TICKET] Acct: %u | Type: CHECKBOOK\n", client.acctNum); printf(GREEN ">>> LOGGED: Checkbook mailed. <<<" RESET "\n"); } 
+    else if (serviceType == 2) { fprintf(reqPtr, "[URGENT] Acct: %u | Type: STOLEN CARD\n", client.acctNum); printf(RED ">>> ALARM: Card locked! <<<" RESET "\n"); }
     fclose(reqPtr);
+}
+
+void newRecord(FILE *fPtr) {
+    struct clientData client = {0}; struct biometricData bio = {0, "", 0, "EMPTY"};
+    unsigned int account, inputPin; char newHash[65];
+    printf("\nAssign Account Number (1-100): "); scanf("%u", &account);
+    fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET); fread(&client, sizeof(struct clientData), 1, fPtr);
+    if (client.acctNum != 0) { printf(RED "Account already exists.\n" RESET); return; }
+    printf("Select Account Type ('S' or 'C'): "); scanf(" %c", &client.accountType); client.accountType = toupper(client.accountType); 
+    printf("Set a 4-digit PIN: "); scanf("%u", &inputPin);
+    printf("Enter Last Name, First Name, Initial Balance: "); scanf("%14s%9s%lf", client.lastName, client.firstName, &client.balance);
+    printf("Scan Fingerprint (Enter 64-char Hash): "); scanf("%64s", newHash);
+
+    client.pin = secureHashPIN(inputPin); // HASH THE PIN
+    client.acctNum = account; strcpy(client.thumbprint, "LEGACY");
+
+    WaitForSingleObject(dbMutex, INFINITE); // MUTEX LOCK
+    fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET); fwrite(&client, sizeof(struct clientData), 1, fPtr);
+    ReleaseMutex(dbMutex);
+
+    FILE *bioPtr = fopen("biometrics.dat", "rb+");
+    if (bioPtr) {
+        bio.acctNum = account; strcpy(bio.secureHash, newHash); bio.minutiaePoints = 88; strcpy(bio.status, "ACTIVE");
+        fseek(bioPtr, (account - 1) * sizeof(struct biometricData), SEEK_SET); fwrite(&bio, sizeof(struct biometricData), 1, bioPtr); fclose(bioPtr);
+    }
+    printf(GREEN ">>> Account %u created and Secured! <<<" RESET "\n", account);
+} 
+
+void changePin(FILE *fPtr) {
+    unsigned int account, newPin; struct clientData client = {0};
+    printf("\nEnter account number: "); scanf("%u", &account);
+    fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET); fread(&client, sizeof(struct clientData), 1, fPtr);
+    if (client.acctNum == 0 || !verify2FA(&client)) return; 
+    printf("Enter NEW 4-digit PIN: "); scanf("%u", &newPin);
+    client.pin = secureHashPIN(newPin); // HASH THE PIN
+    
+    WaitForSingleObject(dbMutex, INFINITE);
+    fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET); fwrite(&client, sizeof(struct clientData), 1, fPtr);
+    ReleaseMutex(dbMutex);
+    printf(GREEN ">>> PIN changed successfully. <<<" RESET "\n");
+}
+
+void bankAnalytics(FILE *fPtr) {
+    struct clientData client = {0}; int totalAccounts = 0; double totalLiquidity = 0.0, totalDebt = 0.0;
+    rewind(fPtr);
+    while (fread(&client, sizeof(struct clientData), 1, fPtr)) {
+        if (client.acctNum != 0) { totalAccounts++; if (client.balance >= 0) totalLiquidity += client.balance; else totalDebt += (client.balance * -1); }
+    }
+    printf(CYAN "\n--- BANK MACRO ANALYTICS ---" RESET "\nTotal Accounts: %d\nLiquidity: Rs. %.2f\nDebt: Rs. %.2f\n", totalAccounts, totalLiquidity, totalDebt);
+}
+
+void displayRecords(FILE *readPtr) {
+    struct clientData client = {0}; rewind(readPtr); 
+    printf(CYAN "\n%-6s%-6s%-16s%-11s%12s\n" RESET, "Acct", "Type", "Last Name", "First Name", "Balance(Rs)");
+    while (fread(&client, sizeof(struct clientData), 1, readPtr)) {
+        if (client.acctNum != 0) printf("%-6u%-6c%-16s%-11s%12.2f\n", client.acctNum, client.accountType, client.lastName, client.firstName, client.balance);
+    }
+}
+
+void searchAccount(FILE *fPtr) {
+    unsigned int account; struct clientData client = {0};
+    printf("\nEnter account number: "); scanf("%u", &account);
+    fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET); fread(&client, sizeof(struct clientData), 1, fPtr);
+    if (client.acctNum == 0 || !verify2FA(&client)) return; 
+    printf(CYAN "\nAcct %u | %s %s | Rs. %.2f\n" RESET, client.acctNum, client.firstName, client.lastName, client.balance);
+}
+
+void applyInterest(FILE *fPtr) {
+    struct clientData client = {0}; rewind(fPtr); 
+    WaitForSingleObject(dbMutex, INFINITE);
+    while (fread(&client, sizeof(struct clientData), 1, fPtr) == 1) {
+        if (client.acctNum != 0 && client.accountType == 'S' && client.balance > 0) {
+            client.balance += (client.balance * 0.04);
+            fseek(fPtr, -(long)sizeof(struct clientData), SEEK_CUR); fwrite(&client, sizeof(struct clientData), 1, fPtr); fseek(fPtr, 0, SEEK_CUR); 
+        }
+    }
+    ReleaseMutex(dbMutex);
+    printf(GREEN "\n>>> 4%% Interest Batch Process Complete! <<<" RESET "\n");
+}
+
+void payBill(FILE *fPtr) {
+    unsigned int account; double amount; struct clientData client = {0};
+    printf("\nAccount number: "); scanf("%u", &account);
+    fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET); fread(&client, sizeof(struct clientData), 1, fPtr);
+    if (client.acctNum == 0 || !verify2FA(&client)) return; 
+    printf("Bill Amount: Rs. "); scanf("%lf", &amount);
+    double total = amount + 25.00; 
+    if (client.balance - total < ((client.accountType == 'C') ? -10000.00 : 0.00)) printf(RED ">>> DENIED <<<" RESET "\n");
+    else {
+        WaitForSingleObject(dbMutex, INFINITE);
+        client.balance -= total; fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET); fwrite(&client, sizeof(struct clientData), 1, fPtr);
+        ReleaseMutex(dbMutex);
+        printf(GREEN ">>> Paid successfully! (Inc. Rs 25 Fee) <<<" RESET "\n");
+    }
 }
 
 void viewRequests(void) {
-    char line[150];
-    FILE *reqPtr = fopen("service_requests.txt", "r");
-    if (!reqPtr) { printf("\n>>> No pending requests. <<<\n"); return; }
-    printf("\n======= PENDING REQUESTS =======\n");
-    while (fgets(line, sizeof(line), reqPtr)) printf("%s", line);
-    printf("================================\n");
-    fclose(reqPtr);
-}
-
-void changePin(FILE *fPtr) {
-    unsigned int account, newPin; 
-    struct clientData client = {0, 0, "", ' ', "", "", 0.0};
-    
-    printf("\nEnter account number: ");
-    if(scanf("%u", &account) != 1) { clearInputBuffer(); return; }
-    fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET);
-    fread(&client, sizeof(struct clientData), 1, fPtr);
-    
-    if (client.acctNum == 0) { printf("Account does not exist.\n"); return; }
-    if (!verify2FA(&client)) return; 
-
-    printf("Enter NEW 4-digit PIN: "); scanf("%u", &newPin);
-    client.pin = newPin;
-    fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET);
-    fwrite(&client, sizeof(struct clientData), 1, fPtr);
-    printf(">>> PIN changed successfully. <<<\n");
+    char line[150]; FILE *reqPtr = fopen("service_requests.txt", "r");
+    if (!reqPtr) return;
+    printf(CYAN "\n======= PENDING SUPPORT TICKETS =======" RESET "\n");
+    while (fgets(line, sizeof(line), reqPtr)) printf("%s", line); fclose(reqPtr);
 }
 
 void deleteRecord(FILE *fPtr) {
-    struct clientData client;                                       
-    struct clientData blank = {0, 0, "", ' ', "", "", 0}; 
-    unsigned int account; 
+    struct clientData client; struct clientData blankClient = {0}; 
+    struct biometricData blankBio = {0, "", 0, "EMPTY"}; unsigned int account; 
+    printf("\nEnter account to close: "); scanf("%u", &account);
+    fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET); fread(&client, sizeof(struct clientData), 1, fPtr);
+    if (client.acctNum == 0 || !verify2FA(&client)) return; 
     
-    printf("\nEnter account to close: ");
-    if(scanf("%u", &account) != 1) { clearInputBuffer(); return; }
-    fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET);
-    fread(&client, sizeof(struct clientData), 1, fPtr);
+    WaitForSingleObject(dbMutex, INFINITE);
+    fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET); fwrite(&blankClient, sizeof(struct clientData), 1, fPtr);
+    ReleaseMutex(dbMutex);
 
-    if (client.acctNum == 0) { printf("Account does not exist.\n"); return; }
-    if (client.balance < 0) { printf(">>> CANNOT CLOSE: Account overdrawn by ₹%.2f. <<<\n", (client.balance * -1)); return; }
-
-    if (!verify2FA(&client)) return; 
-
-    fseek(fPtr, (account - 1) * sizeof(struct clientData), SEEK_SET);
-    fwrite(&blank, sizeof(struct clientData), 1, fPtr);
-    printf(">>> Account closed. Remaining ₹%.2f dispensed. <<<\n", client.balance);
+    FILE *bioPtr = fopen("biometrics.dat", "rb+");
+    if(bioPtr) { fseek(bioPtr, (account - 1) * sizeof(struct biometricData), SEEK_SET); fwrite(&blankBio, sizeof(struct biometricData), 1, bioPtr); fclose(bioPtr); }
+    printf(GREEN ">>> Account & Biometric Profile closed. Remaining Rs. %.2f dispensed. <<<" RESET "\n", client.balance);
 }
