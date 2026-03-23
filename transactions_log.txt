@@ -1,1 +1,3 @@
 --- SECURE SYSTEM INITIALIZED ---
+Acct: 28 | Transfer TO 1: -3000000.00 | Balance: 297000000.00
+Acct: 1 | Transfer FROM 28: +3000000.00 | Balance: 3088400.00
